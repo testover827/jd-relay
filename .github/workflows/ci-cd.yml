@@ -1,0 +1,184 @@
+# ──────────────────────────────────────────
+# GitHub Actions CI/CD Pipeline
+# ──────────────────────────────────────────
+# 触发条件: push 到 main 分支或 PR
+# 流程: lint → test → build → deploy (manual approval)
+# ──────────────────────────────────────────
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+  DOCKER_REGISTRY: ghcr.io
+
+jobs:
+  # ── 1. 代码质量 ──
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install ruff pylama mypy
+          pip install -r server/requirements.txt
+
+      - name: Ruff Lint
+        run: ruff check server/ tests/
+
+      - name: Ruff Format Check
+        run: ruff format --check server/ tests/
+
+      - name: PyLama
+        run: pylama server/ --skip "tests/*"
+
+  # ── 2. 测试 ──
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        test-type: [unit, integration, e2e]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r server/requirements.txt
+          pip install -r requirements-test.txt
+
+      - name: Run ${{ matrix.test-type }} tests
+        env:
+          RELAY_API_KEY: test-ci-api-key
+          AES_ENCRYPTION_KEY: "aa" * 32
+          HMAC_SECRET: "bb" * 32
+          SESSION_SECRET: test-ci-session-secret
+        run: |
+          python3 -m pytest tests/${{ matrix.test-type }}/ \
+            -v --tb=short \
+            --junitxml=test-results-${{ matrix.test-type }}.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.test-type }}
+          path: test-results-${{ matrix.test-type }}.xml
+
+  # ── 3. 安全扫描 ──
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: 0  # 不阻塞流水线
+
+  # ── 4. 构建 Docker 镜像 ──
+  build:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/jd-relay
+          tags: |
+            type=sha,format=short
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.prod
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── 5. 部署（需要手动审批）──
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://${{ vars.DOMAIN_NAME }}
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /opt/jd-relay
+            docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml pull
+            docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --wait
+            docker compose ps
+
+      - name: Health check
+        run: |
+          sleep 10
+          curl -f https://${{ vars.DOMAIN_NAME }}/health || exit 1
+
+  # ── 6. 通知 ──
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+    steps:
+      - name: Deployment status
+        run: |
+          if [ "${{ needs.deploy.result }}" = "success" ]; then
+            echo "✅ Deployment successful: https://${{ vars.DOMAIN_NAME }}"
+          else
+            echo "❌ Deployment failed"
+          fi

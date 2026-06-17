@@ -1,0 +1,61 @@
+# ──────────────────────────────────────────
+# 生产级 Dockerfile — 多阶段构建
+# ──────────────────────────────────────────
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# 构建依赖
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libc6-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# ──────────────────────────────────────────
+FROM python:3.11-slim
+
+# 元数据标签
+LABEL maintainer="devops@example.com"
+LABEL description="Jenkins & DingTalk Relay Forwarder"
+LABEL version="2.0.0"
+
+WORKDIR /app
+
+# 运行时依赖（仅 curl 用于健康检查）
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# 从 builder 复制 Python 包
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+# 创建非 root 用户
+RUN groupadd -r relay && useradd -r -g relay -d /app -s /sbin/nologin relay
+
+# 应用代码
+COPY app/ ./app/
+COPY alembic.ini .
+COPY alembic/ ./alembic/
+
+# 目录和权限
+RUN mkdir -p /app/data /app/logs && \
+    chown -R relay:relay /app
+
+# 切换到非 root 用户
+USER relay
+
+# 数据目录挂载点
+VOLUME ["/app/data", "/app/logs"]
+
+EXPOSE 8000
+
+# 健康检查（Python 原生，不依赖 curl）
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+# 入口
+ENTRYPOINT ["python3", "-m", "uvicorn", "app.main:app"]
+CMD ["--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

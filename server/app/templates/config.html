@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}配置 - 转发器{% endblock %}
+{% block content %}
+
+<div class="bg-white rounded-lg shadow p-6 max-w-3xl">
+    <h2 class="text-xl font-semibold mb-4">⚙️ 系统配置</h2>
+    <p class="text-sm text-gray-500 mb-4">敏感值以加密方式存储，此处显示脱敏信息</p>
+
+    <div id="config-container">
+        <div class="text-gray-400">加载中...</div>
+    </div>
+</div>
+
+<script>
+async function loadConfig() {
+    const resp = await fetch('/api/v1/admin/config');
+    const data = await resp.json();
+
+    const container = document.getElementById('config-container');
+    const configs = data.configs;
+    const descriptions = data.descriptions;
+
+    let html = '<table class="w-full text-sm"><thead><tr class="border-b text-left text-gray-500"><th class="py-2">配置项</th><th class="py-2">值</th><th class="py-2">说明</th></tr></thead><tbody>';
+
+    for (const [key, value] of Object.entries(configs)) {
+        html += `<tr class="border-b">
+            <td class="py-2 font-mono text-xs">${key}</td>
+            <td class="py-2 font-mono text-xs">${value || '<span class="text-gray-400">未设置</span>'}</td>
+            <td class="py-2 text-xs text-gray-500">${descriptions[key] || ''}</td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    html += '<p class="text-xs text-gray-400 mt-4">💡 完整配置请通过环境变量 (.env) 或 Docker Compose 设置</p>';
+    container.innerHTML = html;
+}
+
+loadConfig();
+</script>
+{% endblock %}

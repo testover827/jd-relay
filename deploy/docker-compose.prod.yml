@@ -1,0 +1,120 @@
+version: "3.8"
+
+# ═══════════════════════════════════════════════
+# 生产级 Docker Compose — Jenkins & 钉钉转发器
+# ═══════════════════════════════════════════════
+# 启动: docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d
+# 查看日志: docker compose logs -f relay
+# 停止: docker compose down
+# ═══════════════════════════════════════════════
+
+services:
+  relay:
+    build:
+      context: ./server
+      dockerfile: ../deploy/docker/Dockerfile.prod
+    container_name: jd-relay
+    restart: unless-stopped
+
+    # 仅暴露给本地 Nginx，不直接对外
+    expose:
+      - "8000"
+    # 如果需要直接访问（调试），映射到本地端口:
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///app/data/relay.db
+      - RELAY_HOST=0.0.0.0
+      - RELAY_PORT=8000
+      - DEBUG=false
+      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
+
+      # ── 安全密钥（通过 .env 文件注入）──
+      - RELAY_API_KEY=${RELAY_API_KEY:?RELAY_API_KEY is required}
+      - AES_ENCRYPTION_KEY=${AES_ENCRYPTION_KEY:?AES_ENCRYPTION_KEY is required}
+      - HMAC_SECRET=${HMAC_SECRET:?HMAC_SECRET is required}
+      - CONFIG_MASTER_KEY=${CONFIG_MASTER_KEY:?CONFIG_MASTER_KEY is required}
+      - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET is required}
+
+      # ── 钉钉配置 ──
+      - DINGTALK_APP_KEY=${DINGTALK_APP_KEY}
+      - DINGTALK_APP_SECRET=${DINGTALK_APP_SECRET}
+      - DINGTALK_AGENT_ID=${DINGTALK_AGENT_ID}
+
+      # ── Jenkins 配置 ──
+      - JENKINS_URL=${JENKINS_URL}
+      - JENKINS_USERNAME=${JENKINS_USERNAME}
+      - JENKINS_API_TOKEN=${JENKINS_API_TOKEN}
+
+      # ── 管理员 ──
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
+
+    volumes:
+      # 数据持久化
+      - relay_data:/app/data
+      # 日志（可选：挂载到宿主机便于收集）
+      - ./logs:/app/logs
+
+    # ── 资源限制 ──
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+    # ── 健康检查 ──
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    # ── 日志轮转 ──
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    # ── 安全加固 ──
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # SQLite 需要写权限
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+
+  # ── Nginx 反向代理 ──
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: jd-relay-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/ssl:/etc/letsencrypt:ro
+      - ./deploy/nginx/www:/var/www/certbot:ro
+    depends_on:
+      relay:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  relay_data:
+    driver: local

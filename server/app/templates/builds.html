@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}构建记录 - 转发器{% endblock %}
+{% block content %}
+
+<div class="bg-white rounded-lg shadow p-4">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold">🔨 构建记录</h2>
+        <select id="status-filter" onchange="loadBuilds(1)" class="px-3 py-1 border rounded text-sm">
+            <option value="">全部状态</option>
+            <option value="pending">等待中</option>
+            <option value="queued">排队中</option>
+            <option value="building">构建中</option>
+            <option value="success">成功</option>
+            <option value="failure">失败</option>
+            <option value="aborted">已取消</option>
+        </select>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b text-left text-gray-500">
+                    <th class="py-2">Job</th>
+                    <th class="py-2">Build #</th>
+                    <th class="py-2">状态</th>
+                    <th class="py-2">结果</th>
+                    <th class="py-2">耗时</th>
+                    <th class="py-2">时间</th>
+                </tr>
+            </thead>
+            <tbody id="builds-table">
+                <tr><td colspan="6" class="py-4 text-center text-gray-400">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div id="pagination" class="flex justify-center space-x-2 mt-4"></div>
+</div>
+
+<script>
+async function loadBuilds(page) {
+    const status = document.getElementById('status-filter').value;
+    const resp = await fetch(`/api/v1/admin/builds?page=${page}&page_size=20&status=${status}`);
+    const data = await resp.json();
+
+    const tbody = document.getElementById('builds-table');
+    tbody.innerHTML = data.items.map(b => `
+        <tr class="border-b hover:bg-gray-50">
+            <td class="py-2 font-medium">${b.job_name}</td>
+            <td class="py-2">#${b.jenkins_build_id || b.id}</td>
+            <td class="py-2"><span class="px-2 py-0.5 rounded text-xs ${statusClass(b.status)}">${b.status}</span></td>
+            <td class="py-2"><span class="px-2 py-0.5 rounded text-xs ${resultClass(b.result)}">${b.result || '-'}</span></td>
+            <td class="py-2 text-gray-500">${b.duration_ms ? (b.duration_ms / 1000).toFixed(1) + 's' : '-'}</td>
+            <td class="py-2 text-gray-500">${new Date(b.triggered_at).toLocaleString()}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="6" class="py-4 text-center text-gray-400">暂无数据</td></tr>';
+
+    renderPagination(data.total, data.page, data.page_size, 'loadBuilds');
+}
+
+function statusClass(s) {
+    const m = {pending: 'bg-yellow-100 text-yellow-800', queued: 'bg-yellow-100 text-yellow-800',
+               building: 'bg-blue-100 text-blue-800', success: 'bg-green-100 text-green-800',
+               failure: 'bg-red-100 text-red-800', aborted: 'bg-gray-100 text-gray-800'};
+    return m[s] || 'bg-gray-100';
+}
+function resultClass(r) {
+    const m = {SUCCESS: 'bg-green-100 text-green-800', FAILURE: 'bg-red-100 text-red-800',
+               ABORTED: 'bg-gray-100 text-gray-800'};
+    return m[r] || '';
+}
+
+function renderPagination(total, page, pageSize, fnName) {
+    const pages = Math.ceil(total / pageSize);
+    const div = document.getElementById('pagination');
+    let html = '';
+    for (let i = 1; i <= pages; i++) {
+        html += `<button onclick="${fnName}(${i})" class="px-3 py-1 rounded ${i === page ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300'}">${i}</button>`;
+    }
+    div.innerHTML = html || '<span class="text-gray-400">共 0 条</span>';
+}
+
+loadBuilds(1);
+</script>
+{% endblock %}

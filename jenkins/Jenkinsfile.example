@@ -1,0 +1,124 @@
+/**
+ * Jenkinsfile.example — 使用 dingtalkNotify 的 Pipeline 示例
+ *
+ * 场景：检测到特殊文件变更时，发起钉钉审批，审批通过后继续构建
+ */
+
+pipeline {
+    agent any
+
+    environment {
+        // CLI 工具需要的环境变量
+        JD_RELAY_URL    = 'http://relay-server:8000'
+        JD_API_KEY      = credentials('jd-api-key')
+        JD_AES_KEY      = credentials('jd-aes-key')
+        JD_HMAC_SECRET  = credentials('jd-hmac-secret')
+    }
+
+    stages {
+
+        stage('检出代码') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('检测变更文件') {
+            steps {
+                script {
+                    // 获取本次变更的文件列表
+                    def changedFiles = sh(
+                        script: 'git diff --name-only HEAD~1 HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    echo "变更文件:\n${changedFiles}"
+
+                    // 检查是否包含特殊文件
+                    def sensitivePatterns = [
+                        'config/production.yaml',
+                        'config/production.yml',
+                        'deploy/production/**',
+                        'terraform/**',
+                        'k8s/production/**',
+                    ]
+
+                    env.NEEDS_APPROVAL = 'false'
+                    env.CHANGED_SENSITIVE = ''
+
+                    for (pattern in sensitivePatterns) {
+                        for (file in changedFiles.readLines()) {
+                            if (file.trim().matches(pattern.replace('*', '.*').replace('?', '.'))) {
+                                env.NEEDS_APPROVAL = 'true'
+                                env.CHANGED_SENSITIVE += "${file}\n"
+                            }
+                        }
+                    }
+
+                    if (env.NEEDS_APPROVAL == 'true') {
+                        echo "检测到敏感文件变更，需要审批!"
+                    }
+                }
+            }
+        }
+
+        stage('钉钉审批') {
+            when {
+                expression { env.NEEDS_APPROVAL == 'true' }
+            }
+            steps {
+                script {
+                    // 调用 dingtalkNotify 发起审批并等待结果
+                    dingtalkNotify(
+                        jobName: env.JOB_NAME,
+                        buildId: env.BUILD_ID,
+                        changedFiles: env.CHANGED_SENSITIVE,
+                        approvers: 'manager001,manager002',
+                        title: "生产环境部署审批: ${env.JOB_NAME}",
+                        timeout: 3600,  // 1小时超时
+                    )
+                }
+            }
+        }
+
+        stage('构建') {
+            steps {
+                echo "执行构建..."
+                sh 'make build'
+            }
+        }
+
+        stage('测试') {
+            steps {
+                echo "执行测试..."
+                sh 'make test'
+            }
+        }
+
+        stage('部署') {
+            when {
+                expression { env.NEEDS_APPROVAL == 'true' }
+            }
+            steps {
+                echo "部署到生产环境..."
+                sh 'make deploy-prod'
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                // 通知转发器构建结果
+                def result = currentBuild.result ?: 'SUCCESS'
+                sh """
+                    jdcli notify-result \
+                        --job "${env.JOB_NAME}" \
+                        --build ${env.BUILD_ID} \
+                        --result "${result}" \
+                        --output "构建${result}"
+                """
+            }
+        }
+    }
+}
