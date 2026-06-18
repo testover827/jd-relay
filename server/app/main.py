@@ -146,6 +146,8 @@ app.add_middleware(
 
 # ── 中间件注册（后添加的先执行）──
 # 执行顺序（从外到内）：CORS → Logging → Auth → Route Handler
+# ★ 注意：RequestLoggingMiddleware 现在是纯 ASGI 中间件（非 BaseHTTPMiddleware），
+#   必须用 app.add_middleware() 注册，不能用 add_middleware(RequestLoggingMiddleware, app=app)
 app.add_middleware(APIKeyAuthMiddleware)          # 内层：认证
 app.add_middleware(RequestLoggingMiddleware)       # 外层：日志（记录含被拒绝的请求）
 
