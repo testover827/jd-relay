@@ -30,3 +30,5 @@ logs/
 *.swp
 .DS_Store
 Thumbs.db
+.workbuddy/
+server/data/
