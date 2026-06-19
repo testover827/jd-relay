@@ -32,11 +32,12 @@ if(NOT nlohmann_json_FOUND)
 endif()
 
 # ── Source modules ────────────────────────────────────────────
-add_subdirectory(src/crypto)
-add_subdirectory(src/protocol)
-add_subdirectory(src/tools)
-add_subdirectory(src/forwarder)
-add_subdirectory(src/agent)
+add_subdirectory(agent/crypto)
+add_subdirectory(agent/protocol)
+add_subdirectory(agent/tools)
+add_subdirectory(agent/ws_client)
+add_subdirectory(agent/jenkins)
+add_subdirectory(legacy/cpp_forwarder/forwarder)
 
 # ── Tests ─────────────────────────────────────────────────────
 enable_testing()

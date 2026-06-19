@@ -1,0 +1,41 @@
+# JD-Relay Forwarder systemd service
+# Deployed in DMZ — receives DingTalk callbacks + WebSocket for Agents
+#
+# Install:
+#   sudo cp deploy/systemd/jd-relay-forwarder.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now jd-relay-forwarder
+
+[Unit]
+Description=JD-Relay Forwarder
+Documentation=https://github.com/example/jd-relay
+After=network.target mysql.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=jd-relay
+Group=jd-relay
+WorkingDirectory=/opt/jd-relay/forwarder
+ExecStart=/opt/jd-relay/forwarder/.venv/bin/python -m forwarder.main --config /etc/jd-relay/forwarder.conf
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/jd-relay /var/lib/jd-relay
+ReadOnlyPaths=/etc/jd-relay
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jd-relay-forwarder
+
+# Environment
+EnvironmentFile=-/etc/jd-relay/forwarder.env
+
+[Install]
+WantedBy=multi-user.target

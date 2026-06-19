@@ -5,18 +5,17 @@
 #include "jd_relay/crypto/replay_guard.h"
 #include "jd_relay/protocol/util.h"
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <chrono>
-#include <iostream>
 
 namespace jd_relay::agent {
 
 namespace beast = boost::beast;
 namespace net   = boost::asio;
 
-// ──────────────────────────────────────────────────────────────────
-// Construction / Destruction
-// ──────────────────────────────────────────────────────────────────
+// ── Construction / Destruction ──────────────────────────────────
 
 WsClient::WsClient(const std::string& host,
                    uint16_t port,
@@ -35,18 +34,19 @@ WsClient::WsClient(const std::string& host,
     , message_cb_(std::move(msg_cb))
     , connect_cb_(std::move(conn_cb))
 {
+    spdlog::info("[WsClient] Created: agent={}, forwarder={}:{}",
+                 agent_id_, host_, port_);
 }
 
 WsClient::~WsClient() {
+    spdlog::info("[WsClient] Destroying: agent={}", agent_id_);
     stop();
     if (io_thread_.joinable()) {
         io_thread_.join();
     }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Lifecycle
-// ──────────────────────────────────────────────────────────────────
+// ── Lifecycle ──────────────────────────────────────────────────
 
 void WsClient::start() {
     running_.store(true);
@@ -55,65 +55,59 @@ void WsClient::start() {
 
 void WsClient::stop() {
     running_.store(false);
-    cv_.notify_all();           // wake up backoff sleep
-    close_connection();         // unblock ws_->read()
+    cv_.notify_all();
+    close_connection();
 }
 
 void WsClient::close_connection() {
     if (ws_) {
         boost::system::error_code ec;
-        // shutdown() reliably unblocks a blocking read() from another thread
         ws_->next_layer().shutdown(tcp::socket::shutdown_both, ec);
         ws_->next_layer().close(ec);
     }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Main loop: connect → handshake → I/O → reconnect on failure
-// ──────────────────────────────────────────────────────────────────
+// ── Main loop ──────────────────────────────────────────────────
 
 void WsClient::run() {
-    int backoff = 1;  // seconds
+    int backoff = 1;
 
     while (running_.load()) {
         bool ok = false;
         try {
             ok = connect_and_handshake();
         } catch (const std::exception& e) {
-            std::cerr << "[WsClient] Connect/handshake error: " << e.what() << "\n";
+            spdlog::warn("[{}] Connect/handshake error: {}", agent_id_, e.what());
         }
 
         if (ok) {
             connected_.store(true);
             if (connect_cb_) connect_cb_(true);
-            backoff = 1;  // reset backoff on successful connect
+            backoff = 1;
 
-            io_loop();    // blocks until connection breaks
+            io_loop();
 
             connected_.store(false);
             if (connect_cb_) connect_cb_(false);
         }
 
-        // Clean up per-connection state
         ws_.reset();
         codec_.reset();
         ecdh_.reset();
 
         if (!running_.load()) break;
 
-        // Interruptible backoff sleep
+        spdlog::info("[{}] Reconnecting in {}s...", agent_id_, backoff);
         {
             std::unique_lock<std::mutex> lock(cv_mutex_);
             cv_.wait_for(lock, std::chrono::seconds(backoff),
                          [this]() { return !running_.load(); });
         }
-        backoff = std::min(backoff * 2, 30);  // max 30s
+        backoff = std::min(backoff * 2, 30);
     }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Connect + Handshake
-// ──────────────────────────────────────────────────────────────────
+// ── Connect + Handshake ────────────────────────────────────────
 
 bool WsClient::connect_and_handshake() {
     // 1. TCP connect
@@ -129,10 +123,10 @@ bool WsClient::connect_and_handshake() {
     // 3. Generate ephemeral ECDH key pair
     ecdh_ = std::make_unique<crypto::EcdhKeyExchange>();
 
-    // 4. Read Agent's ECDSA public key from file
+    // 4. Read Agent's ECDSA public key
     std::string agent_pub_pem = protocol::read_file(ecdsa_pub_file_);
 
-    // 5. Sign handshake data with Agent's ECDSA private key
+    // 5. Sign handshake data
     std::string signing_data =
         agent_id_ + "|" + ecdh_->public_key_pem() + "|" + agent_pub_pem;
     crypto::EcdsaSigner signer(ecdsa_priv_file_);
@@ -155,7 +149,7 @@ bool WsClient::connect_and_handshake() {
         beast::buffers_to_string(buf.data()));
 
     if (ack.status != "OK") {
-        std::cerr << "[WsClient] Handshake rejected: " << ack.error << "\n";
+        spdlog::error("[{}] Handshake rejected: {}", agent_id_, ack.error);
         return false;
     }
 
@@ -168,7 +162,7 @@ bool WsClient::connect_and_handshake() {
     if (!verifier.verify(
             std::vector<uint8_t>(ack_data.begin(), ack_data.end()),
             ack_sig)) {
-        std::cerr << "[WsClient] Forwarder signature verification failed\n";
+        spdlog::error("[{}] Forwarder signature verification failed", agent_id_);
         return false;
     }
 
@@ -186,19 +180,21 @@ bool WsClient::connect_and_handshake() {
         std::move(verifier_ptr),
         std::make_unique<crypto::ReplayGuard>());
 
+    spdlog::info("[{}] Handshake complete, connected to Forwarder", agent_id_);
     return true;
 }
 
-// ──────────────────────────────────────────────────────────────────
-// I/O Loop (blocks until connection breaks)
-// ──────────────────────────────────────────────────────────────────
+// ── I/O Loop ───────────────────────────────────────────────────
 
 void WsClient::io_loop() {
     beast::flat_buffer buf;
     while (running_.load()) {
         boost::system::error_code ec;
         ws_->read(buf, ec);
-        if (ec) break;
+        if (ec) {
+            spdlog::warn("[{}] Read error: {}", agent_id_, ec.message());
+            break;
+        }
 
         std::string json_str = beast::buffers_to_string(buf.data());
         buf.consume(buf.size());
@@ -206,26 +202,42 @@ void WsClient::io_loop() {
         auto env    = crypto::CryptoCodec::from_json(json_str);
         auto result = codec_->decrypt(env);
         if (!result.ok) {
-            std::cerr << "[WsClient] Decrypt error: " << result.error << "\n";
+            spdlog::warn("[{}] Decrypt error: {}", agent_id_, result.error);
             continue;
         }
 
         auto type = crypto::parse_message_type(env.type);
 
-        if (type == crypto::MessageType::HEARTBEAT) continue;
-        if (type == crypto::MessageType::ACK)       continue;
+        // ── HEARTBEAT: respond with ACK ─────────────────────────
+        if (type == crypto::MessageType::HEARTBEAT) {
+            send(crypto::MessageType::ACK, R"({"ack":"heartbeat"})");
+            continue;
+        }
+
+        // ── ACK: internal, skip dispatch ────────────────────────
+        if (type == crypto::MessageType::ACK) {
+            continue;
+        }
 
         std::string plaintext(result.plaintext.begin(),
                               result.plaintext.end());
+
+        // ── BUILD_TRIGGER: auto-ACK before processing ───────────
+        if (type == crypto::MessageType::BUILD_TRIGGER) {
+            // Parse msg_id for ACK correlation
+            std::string ack_payload = R"({"msg_id":")" + env.msg_id + R"(","status":"received"})";
+            send(crypto::MessageType::ACK, ack_payload);
+            spdlog::info("[{}] ACK sent for msg_id={}", agent_id_, env.msg_id);
+        }
+
+        // Dispatch to user callback
         if (message_cb_) {
             message_cb_(type, plaintext);
         }
     }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Send (thread-safe)
-// ──────────────────────────────────────────────────────────────────
+// ── Send (thread-safe) ─────────────────────────────────────────
 
 bool WsClient::send(crypto::MessageType type,
                      const std::string& payload_json) {
@@ -240,7 +252,11 @@ bool WsClient::send(crypto::MessageType type,
     std::lock_guard<std::mutex> lock(write_mutex_);
     boost::system::error_code ec;
     ws_->write(net::buffer(json_str), ec);
-    return !ec;
+    if (ec) {
+        spdlog::warn("[{}] Send error: {}", agent_id_, ec.message());
+        return false;
+    }
+    return true;
 }
 
 } // namespace jd_relay::agent

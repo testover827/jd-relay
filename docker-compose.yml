@@ -1,0 +1,71 @@
+# JD-Relay Development Environment
+# Python Forwarder + MySQL + Nginx
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f forwarder
+
+version: "3.8"
+
+services:
+  forwarder:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.python
+    ports:
+      - "8000:8000"
+    environment:
+      - RELAY_HOST=0.0.0.0
+      - RELAY_PORT=8000
+      - RELAY_MYSQL_URL=mysql+aiomysql://jdrelay:jdrelay@mysql:3306/jd_relay
+      - RELAY_ECDSA_PRIVATE_KEY=/app/config/keys/forwarder_ecdsa_priv.pem
+      - RELAY_ECDSA_PUBLIC_KEY=/app/config/keys/forwarder_ecdsa_pub.pem
+      - RELAY_DINGTALK_APP_KEY=${RELAY_DINGTALK_APP_KEY:-}
+      - RELAY_DINGTALK_APP_SECRET=${RELAY_DINGTALK_APP_SECRET:-}
+      - RELAY_DINGTALK_AGENT_ID=${RELAY_DINGTALK_AGENT_ID:-0}
+    volumes:
+      - ./config:/app/config:ro
+      - forwarder_keys:/app/config/keys
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - jd-relay
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: jd_relay
+      MYSQL_USER: jdrelay
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-jdrelay}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - jd-relay
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - forwarder
+    networks:
+      - jd-relay
+
+volumes:
+  mysql_data:
+  forwarder_keys:
+
+networks:
+  jd-relay:

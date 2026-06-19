@@ -1,4 +1,7 @@
-# src/agent/ — WebSocket client with auto-reconnect
+# agent/ws_client/ — WebSocket client with auto-reconnect
+
+find_package(spdlog QUIET)
+
 add_library(jd_relay_agent STATIC
     src/ws_client.cpp
 )
@@ -13,3 +16,10 @@ target_link_libraries(jd_relay_agent PUBLIC
     Boost::boost
     Threads::Threads
 )
+
+if(TARGET spdlog::spdlog)
+    target_link_libraries(jd_relay_agent PUBLIC spdlog::spdlog)
+else()
+    # spdlog is header-only, just need the include path
+    target_include_directories(jd_relay_agent SYSTEM PUBLIC /usr/include)
+endif()

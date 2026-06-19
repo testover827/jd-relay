@@ -19,7 +19,7 @@ target_link_libraries(crypto_tests
 
 target_include_directories(crypto_tests
     PRIVATE
-        ${CMAKE_SOURCE_DIR}/src/crypto/include
+        ${CMAKE_SOURCE_DIR}/agent/crypto/include
 )
 
 # Register with CTest

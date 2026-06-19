@@ -25,3 +25,6 @@ config/keys/
 
 # Legacy Python (archived, not maintained)
 legacy/
+build_wsl/
+__pycache__/
+.venv/

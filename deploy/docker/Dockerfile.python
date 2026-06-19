@@ -1,0 +1,38 @@
+# JD-Relay Forwarder (Python) Dockerfile
+# Multi-stage build for minimal production image
+
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN pip install --no-cache-dir --upgrade pip
+
+# Copy dependencies first (better caching)
+COPY pyproject.toml .
+RUN pip install --no-cache-dir --target=/install \
+    fastapi uvicorn[standard] cryptography sqlalchemy httpx \
+    aiomysql tenacity
+
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+# Copy installed packages
+COPY --from=builder /install /usr/local/lib/python3.12/site-packages
+
+# Copy application code
+COPY src/forwarder/ /app/forwarder/
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash forwarder && \
+    chown -R forwarder:forwarder /app
+
+USER forwarder
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=3s \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+ENTRYPOINT ["python", "-m", "forwarder.main"]

@@ -27,7 +27,11 @@ using tcp           = net::ip::tcp;
 namespace crypto    = jd_relay::crypto;
 
 /// WebSocket client that connects to the Forwarder.
-/// Features: ECDH handshake, encrypted I/O, exponential-backoff auto-reconnect.
+/// Features:
+/// - ECDH handshake + encrypted I/O
+/// - Exponential-backoff auto-reconnect
+/// - ACK sending on BUILD_TRIGGER receipt
+/// - Heartbeat detection (disconnect if no message within 2x heartbeat interval)
 class WsClient {
 public:
     /// Called when a decrypted message arrives from the Forwarder.

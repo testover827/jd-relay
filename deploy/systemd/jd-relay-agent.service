@@ -1,0 +1,45 @@
+# JD-Relay Agent systemd service
+# Deployed in internal network — connects outbound to Forwarder via WebSocket
+#
+# Install:
+#   sudo cp deploy/systemd/jd-relay-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now jd-relay-agent
+
+[Unit]
+Description=JD-Relay Agent
+Documentation=https://github.com/example/jd-relay
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=jd-relay
+Group=jd-relay
+WorkingDirectory=/opt/jd-relay/agent
+ExecStart=/opt/jd-relay/agent/bin/jd-relay-agent --config /etc/jd-relay/agent.conf
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/jd-relay /var/lib/jd-relay
+ReadOnlyPaths=/etc/jd-relay
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jd-relay-agent
+
+# Environment
+EnvironmentFile=-/etc/jd-relay/agent.env
+
+# Rate limiting for restarts (prevent infinite restart loop)
+StartLimitBurst=5
+StartLimitIntervalSec=120
+
+[Install]
+WantedBy=multi-user.target
