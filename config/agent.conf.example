@@ -1,0 +1,46 @@
+# Agent configuration
+# Deployed in internal network, connects to Forwarder via WebSocket (outbound)
+# Accesses Jenkins REST API directly
+
+[forwarder]
+# Forwarder WebSocket URL (outbound connection — no inbound ports needed)
+ws_url = wss://dmz-forwarder.example.com:8444/agent-ws
+# Reconnection settings
+reconnect_interval = 5
+max_reconnect_interval = 60
+heartbeat_interval = 30
+
+[crypto]
+# ECDSA private key for signing outgoing messages
+ecdsa_private_key = /etc/jd-relay/keys/agent_ecdsa_private.pem
+# Peer (Forwarder) ECDSA public key for verifying incoming messages
+peer_ecdsa_public_key = /etc/jd-relay/keys/forwarder_ecdsa_public.pem
+# AES-256 session key (must match Forwarder's). Alternatively set RELAY_AES_KEY env var.
+# aes_key = <64-char-hex-string>
+key_version = 1
+
+[jenkins]
+# Jenkins REST API
+jenkins_url = http://jenkins.internal:8080
+jenkins_user = jd-relay-agent
+jenkins_api_token = YOUR_JENKINS_API_TOKEN
+# Polling interval for build status (seconds)
+poll_interval = 5
+# Build timeout (seconds, 0 = no timeout)
+build_timeout = 3600
+
+[agent]
+# Max concurrent builds
+max_concurrent_builds = 4
+# Project-to-Job mapping (project_name = jenkins_job_name)
+# Used for routing BUILD_TRIGGER messages to the correct Jenkins job
+project_mapping = my-project:my-jenkins-job
+                  other-project:other-job
+
+[database]
+# SQLite for offline buffering and message dedup
+sqlite_path = /var/lib/jd-relay/agent.db
+
+[logging]
+log_level = info
+log_file  = /var/log/jd-relay/agent.log

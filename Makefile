@@ -1,33 +1,34 @@
-.PHONY: help up down build logs shell keys test
+# JD-Relay — 跨网审批构建转发系统
+# Makefile for C++ build/test convenience (runs in WSL)
 
-help: ## 显示帮助信息
+.PHONY: help configure build test test-unit test-integration clean keys
+
+BUILD_DIR ?= build
+
+help: ## 显示帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-up: ## 启动服务
-	docker compose up -d
+configure: ## CMake 配置 (Ninja)
+	cmake -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Debug
 
-down: ## 停止服务
-	docker compose down
+configure-release: ## CMake 配置 (Release)
+	cmake -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-build: ## 构建镜像
-	docker compose build
+build: ## 编译全部目标
+	cmake --build $(BUILD_DIR) --parallel
 
-logs: ## 查看日志
-	docker compose logs -f relay
+test: ## 运行全部测试
+	cd $(BUILD_DIR) && ctest --output-on-failure
 
-shell: ## 进入容器
-	docker compose exec relay bash
+test-unit: ## 仅运行单元测试
+	cd $(BUILD_DIR) && ./bin/crypto_tests
 
-keys: ## 生成安全密钥
-	@echo "AES_ENCRYPTION_KEY=$$(python3 -c 'import os; print(os.urandom(32).hex())')"
-	@echo "HMAC_SECRET=$$(python3 -c 'import os; print(os.urandom(32).hex())')"
-	@echo "CONFIG_MASTER_KEY=$$(python3 -c 'import os; print(os.urandom(32).hex())')"
-	@echo "RELAY_API_KEY=$$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-	@echo "SESSION_SECRET=$$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+test-integration: ## 仅运行集成测试
+	cd $(BUILD_DIR) && ./bin/phase2_tests
 
-test: ## 运行测试
-	cd server && python -m pytest tests/ -v
+clean: ## 清理构建目录
+	rm -rf $(BUILD_DIR)
 
-dev: ## 本地开发模式启动
-	cd server && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+keys: ## 生成 ECDSA + ECDH 密钥对
+	$(BUILD_DIR)/bin/keygen config/keys

@@ -1,34 +1,27 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
+# Build output
 build/
+cmake-build-*/
+*.o
+*.a
+*.so
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*~
 
-# 环境
-.env
-.env.production
-*.env
+# Keys (never commit!)
+config/keys/
+*.pem
+!config/*.example
 
-# 数据库
-data/*.db
+# Database
+*.db
+*.sqlite
 
-# 缓存
-.pytest_cache/
-.coverage
-
-# 日志
-logs/
+# Logs
 *.log
 
-# 临时文件
-*.tmp
-*.swp
-.DS_Store
-Thumbs.db
-.workbuddy/
-server/data/
+# Legacy Python (archived, not maintained)
+legacy/

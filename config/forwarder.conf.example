@@ -1,0 +1,54 @@
+# Forwarder configuration
+# Deployed in DMZ, receives DingTalk callbacks + serves WebSocket for Agents
+
+[server]
+# HTTPS listen address for DingTalk callbacks
+listen_host = 0.0.0.0
+listen_port = 8443
+# TLS certificate (for DingTalk callback endpoint)
+tls_cert = /etc/jd-relay/certs/server.crt
+tls_key  = /etc/jd-relay/certs/server.key
+
+[websocket]
+# WebSocket listen address for Agent connections
+ws_host = 0.0.0.0
+ws_port = 8444
+# Max concurrent agents
+max_agents = 16
+
+[dingtalk]
+# DingTalk enterprise app credentials
+app_key    = YOUR_APP_KEY_HERE
+app_secret = YOUR_APP_SECRET_HERE
+# Approval process code (from DingTalk admin console)
+process_code = YOUR_PROCESS_CODE_HERE
+# Three approvers (sequential, first approval passes)
+approver_1 = approver1_user_id
+approver_2 = approver2_user_id
+approver_3 = approver3_user_id
+
+[jenkins]
+# Jenkins is accessed by Agent, not by Forwarder directly
+# This section is for reference/forwarding to Agent
+
+[crypto]
+# ECDSA private key for signing outgoing messages
+ecdsa_private_key = /etc/jd-relay/keys/ecdsa_private.pem
+# Peer (Agent) ECDSA public key for verifying incoming messages
+peer_ecdsa_public_key = /etc/jd-relay/keys/agent_ecdsa_public.pem
+# AES-256 session key (64 hex chars). Alternatively set RELAY_AES_KEY env var.
+# aes_key = <64-char-hex-string>
+# Key version (for rotation)
+key_version = 1
+
+[database]
+# MySQL connection
+mysql_host = 127.0.0.1
+mysql_port = 3306
+mysql_db   = jd_relay
+mysql_user = jd_relay
+mysql_pass = CHANGE_ME
+
+[logging]
+log_level = info
+log_file  = /var/log/jd-relay/forwarder.log

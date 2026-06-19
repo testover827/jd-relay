@@ -1,204 +1,97 @@
-# Jenkins & 钉钉 交互转发器
+# JD-Relay — 跨网审批构建转发系统
 
-部署在中间服务器的消息中继系统，桥接 Jenkins（CI/CD 内网）与钉钉（办公协作平台）的双向审批触发流程。
+> Python Forwarder (DMZ) + C++ Agent (内网) 混合架构
+> ECDH P-256 + AES-256-GCM + ECDSA P-256 加密链路
+
+## 项目简介
+
+JD-Relay 桥接外网钉钉与内网 Jenkins，实现"钉钉审批 → Jenkins 构建"的双向闭环：
+
+- **流程 A**：钉钉填单 → 三人审批 → Forwarder 加密转发 → Agent 触发 Jenkins 构建
+- **流程 B**：Jenkins 构建结果 / 敏感文件变更 → Agent 加密回传 → Forwarder 推送钉钉
 
 ## 架构
 
 ```
-Jenkins (内网A)  ←──TLS+AES──→  转发器 (FastAPI)  ←──TLS+AES──→  钉钉 (办公网B)
-                                      │
-                                Web 面板 (SSR+SSE)
-                                http://host:8000
+钉钉 (外网) ──HTTPS──→ Forwarder (DMZ, Python) ──WebSocket(加密)──→ Agent (内网, C++) ──REST API──→ Jenkins
 ```
 
-## 两个核心流程
+| 组件 | 语言 | 技术栈 | 职责 |
+|------|------|--------|------|
+| Forwarder | Python 3.12+ | FastAPI, SQLAlchemy, MySQL, cryptography | 钉钉回调、状态机、MySQL 持久化、WebSocket 服务端 |
+| Agent | C++17/20 | Boost.Beast, OpenSSL, nlohmann/json | WebSocket 客户端、Jenkins API、敏感文件检测 |
 
-### 流程1：钉钉审批 → 触发 Jenkins
-钉钉审批单填写构建参数 → 审批通过 → 转发器解密参数 → 调用 Jenkins API 触发 Job
+## 当前进度
 
-### 流程2：Jenkins 构建门禁 → 钉钉审批 → 继续构建
-Jenkins Pipeline 检测特殊文件变更 → CLI 发起加密审批请求 → 钉钉 Leader 审批 → 回调 Pipeline 继续构建
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| Phase 1 | C++ 加密模块 (ECDH/AES-GCM/ECDSA) | ✅ 39/39 测试 |
+| Phase 2 | C++ WebSocket 客户端 (握手/重连/路由) | ✅ 4/4 测试 |
+| Phase 2.5 | Python Forwarder 骨架 + 跨语言互通 | ⬜ 待开始 |
+| Phase 3 | 钉钉/Jenkins 对接 + 状态机 + MySQL | ⬜ 待开始 |
+| Phase 4 | 端到端联调 + 部署 + Web 面板 | ⬜ 待开始 |
 
-## 快速开始
+## 目录结构
 
-### 1. 生成密钥
+```
+jd-relay/
+├── agent/                      # C++ Agent（Phase 1+2 已完成）
+│   ├── crypto/                 #   加密模块 (OpenSSL)
+│   ├── protocol/               #   握手协议
+│   ├── ws_client/              #   WebSocket 客户端
+│   └── tools/                  #   CLI 工具 (keygen/encryptor/decryptor)
+├── forwarder/                  # Python Forwarder（待实现）
+├── tests/                      # C++ 测试 (unit + integration)
+├── docs/                       # 文档
+│   ├── ARCHITECTURE.md         #   架构设计
+│   ├── CRYPTO_SPEC.md          #   加密协议规范
+│   ├── PHASE1_SUMMARY.md       #   Phase 1 交付概览
+│   ├── PHASE2_SUMMARY.md       #   Phase 2 交付概览
+│   ├── PROMPT_FOR_AI.md        #   后续实现提示词（交给 AI）
+│   └── UIUX.md                 #   UI/UX 设计参考
+├── config/                     # 配置样例
+├── legacy/                     # 归档代码
+│   ├── python/                 #   旧 Python/FastAPI 代码
+│   ├── cpp_forwarder/          #   旧 C++ Forwarder
+│   └── docs/                   #   旧文档
+├── CMakeLists.txt              # 顶层 CMake（只构建 Agent）
+├── Makefile                    # 构建辅助
+└── TODO.md                     # 待办事项
+```
+
+## 构建 C++ Agent
 
 ```bash
-make keys
+# 在 WSL Ubuntu 24.04 中
+cd /mnt/d/workspace/jd-relay
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+
+# 运行测试
+cd build && ctest --output-on-failure   # 43/43 passed
+
+# 生成密钥
+./build/bin/keygen /tmp/keys
+
+# 加密/解密工具
+echo '{"hello":"world"}' | ./build/bin/encryptor --ecdsa-key /tmp/keys/ecdsa_private.pem \
+    --peer-pub /tmp/keys/ecdsa_public.pem --aes-key <hex> --type HEARTBEAT
 ```
 
-### 2. 配置环境变量
+## 关键文档
 
-```bash
-cp .env.example .env
-# 编辑 .env，填入钉钉和 Jenkins 的配置
-```
+- [加密协议规范](docs/CRYPTO_SPEC.md) — C++ ↔ Python 互通的精确规范
+- [架构设计](docs/ARCHITECTURE.md) — 系统拓扑、数据流、部署架构
+- [后续实现提示词](docs/PROMPT_FOR_AI.md) — 交给 AI 的完整实现指引
+- [待办事项](TODO.md) — Phase 2.5 / 3 / 4 详细任务
 
-### 3. 生成管理员密码
-
-```bash
-python3 -c "
-import bcrypt
-pwd = input('Admin password: ')
-print(bcrypt.hashpw(pwd.encode(), bcrypt.gensalt()).decode())
-"
-# 将输出的 hash 填入 .env 的 ADMIN_PASSWORD_HASH
-```
-
-### 4. 启动服务
-
-```bash
-# Docker 部署
-docker compose up -d
-
-# 或本地开发
-make dev
-```
-
-### 5. 验证
-
-```bash
-curl http://localhost:8000/health
-# {"status": "ok", "version": "0.1.0"}
-```
-
-打开浏览器访问 `http://localhost:8000` 进入 Web 面板。
-
-## Jenkins Pipeline 集成
-
-### 安装 CLI 工具
-
-```bash
-cd cli && pip install -e .
-```
-
-### 配置环境变量
-
-```groovy
-// Jenkins Pipeline 中
-environment {
-    JD_RELAY_URL    = 'http://relay-server:8000'
-    JD_API_KEY      = credentials('jd-api-key')
-    JD_AES_KEY      = credentials('jd-aes-key')
-    JD_HMAC_SECRET  = credentials('jd-hmac-secret')
-}
-```
-
-### Pipeline 示例
-
-```groovy
-// 检测特殊文件后发起审批
-stage('钉钉审批') {
-    steps {
-        script {
-            sh """
-                jdcli request-approval \
-                    --job "${env.JOB_NAME}" \
-                    --build ${env.BUILD_ID} \
-                    --title "生产环境部署审批" \
-                    --content "变更文件: config/production.yaml" \
-                    --approvers "manager001"
-            """
-            // 轮询等待审批
-            def result = sh(
-                script: "jdcli wait-approval --id \${APPROVAL_ID} --timeout 3600",
-                returnStatus: true
-            )
-            if (result != 0) { error("审批未通过") }
-        }
-    }
-}
-```
-
-完整示例见 `jenkins/Jenkinsfile.example`。
-
-## CLI 命令
-
-```bash
-# 发起审批
-jdcli request-approval --job <name> --build <id> --title "..." --content "..." --approvers "user1,user2"
-
-# 轮询等待审批
-jdcli wait-approval --id <approval_id> --timeout 3600 --poll 5
-
-# 查询审批状态
-jdcli check-approval --id <approval_id>
-
-# 通知构建结果
-jdcli notify-result --job <name> --build <id> --result SUCCESS --output "构建成功"
-```
-
-## API 端点
-
-| 路径 | 方法 | 说明 |
-|------|------|------|
-| `/health` | GET | 健康检查 |
-| `/api/v1/dingtalk/callback` | POST | 钉钉审批回调 |
-| `/api/v1/dingtalk/send-approval` | POST | 发起审批 |
-| `/api/v1/jenkins/trigger` | POST | 触发构建 |
-| `/api/v1/jenkins/callback` | POST | 构建结果回调 |
-| `/api/v1/jenkins/build/{id}/status` | GET | 查询构建状态 |
-| `/api/v1/admin/dashboard` | GET | 仪表盘数据 |
-| `/api/v1/admin/approvals` | GET | 审批列表 |
-| `/api/v1/admin/builds` | GET | 构建列表 |
-| `/api/v1/admin/logs` | GET | 请求日志 |
-| `/api/v1/admin/logs/stream` | GET | SSE 实时日志流 |
-| `/api/v1/admin/config` | GET/PUT | 配置管理 |
-
-## 项目结构
+## 加密链路
 
 ```
-jenkins-dingtalk-relay/
-├── docker-compose.yml
-├── .env.example
-├── Makefile
-├── server/              # FastAPI 服务端
-│   └── app/
-│       ├── api/         # REST API 路由
-│       ├── services/    # 业务逻辑层
-│       ├── middleware/  # 认证/日志中间件
-│       └── models.py    # SQLAlchemy 模型
-├── cli/                 # Python CLI 工具
-├── jenkins/             # Pipeline 脚本
-├── tests/               # 测试套件
-│   ├── unit/            # 81 单元测试
-│   ├── integration/     # 48 集成测试
-│   └── e2e/             # 11 E2E 测试
-├── deploy/              # 生产部署配置
-│   ├── docker/          # 生产 Dockerfile
-│   ├── nginx/           # Nginx 配置
-│   └── docker-compose.prod.yml
-└── docs/                # 文档
-    ├── API.md           # API 接口文档
-    ├── OPERATIONS.md    # 运维手册
-    ├── SECURITY.md      # 安全白皮书
-    └── TROUBLESHOOTING.md # 故障排查指南
+ECDH P-256 密钥协商 → SHA256(shared_secret) → AES-256-GCM 会话密钥
+                                          ↓
+消息加密: AES-256-GCM (IV=12B, Tag=16B, 分开存储)
+签名: ECDSA P-256 + SHA-256 (DER 编码)
+防重放: ±5 分钟时间戳窗口 + nonce 缓存查重
+信封: CryptoEnvelope JSON (msg_id/timestamp/nonce/type/iv/ciphertext/tag/signature)
 ```
-
-## 文档
-
-| 文档 | 说明 |
-|------|------|
-| [API 接口文档](docs/API.md) | 完整 API 参考，含请求/响应示例 |
-| [运维手册](docs/OPERATIONS.md) | 部署、配置、备份、升级流程 |
-| [安全白皮书](docs/SECURITY.md) | 威胁模型、加密方案、安全检查清单 |
-| [故障排查指南](docs/TROUBLESHOOTING.md) | 常见问题诊断与解决 |
-
-## 测试
-
-```bash
-# 运行全部测试 (137 passed, 3 skipped)
-pytest tests/ -v
-
-# 分类运行
-pytest tests/unit/ -v         # 单元测试 (81)
-pytest tests/integration/ -v  # 集成测试 (48)
-pytest tests/e2e/ -v          # E2E 测试 (8 passed, 3 skipped)
-```
-
-## 安全
-
-- **传输层**: TLS 1.2+ 加密通信
-- **应用层**: AES-256-GCM 加密 + HMAC-SHA256 签名
-- **配置存储**: PBKDF2 派生密钥二次加密敏感配置
-- **认证**: API Key (Jenkins/CLI) + 钉钉回调签名验证 + Session (Web 面板)
