@@ -18,8 +18,9 @@ if config.config_file_name is not None:
 
 # Import all models so Alembic can detect them
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-from forwarder.models import Base
+# v3.0: models now live in forwarder/app/models.py (root-level package)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from forwarder.app.models import Base
 
 target_metadata = Base.metadata
 

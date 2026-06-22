@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% set active_page = "orders" %}
+{% block title %}工单列表 — JD-Relay{% endblock %}
+
+{% block content %}
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+    <!-- Header -->
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+        <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 flex-1">📋 工单管理</h2>
+        <!-- State filter -->
+        <select id="state-filter" onchange="loadOrders(0)"
+            class="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">全部状态</option>
+            <option value="PENDING_APPROVAL">待审批</option>
+            <option value="APPROVED">已批准</option>
+            <option value="BUILDING">构建中</option>
+            <option value="SUCCESS">成功</option>
+            <option value="FAILED">失败</option>
+            <option value="CLOSED">已关闭</option>
+            <option value="PENDING_SECOND_REVIEW">二次审核</option>
+        </select>
+        <!-- Project filter -->
+        <input id="project-filter" type="text" placeholder="按项目搜索…" onchange="loadOrders(0)"
+            class="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 w-40">
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-gray-200 dark:border-gray-700 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <th class="pb-2 pr-4">工单号</th>
+                    <th class="pb-2 pr-4">ISSUE</th>
+                    <th class="pb-2 pr-4">项目 / 分支</th>
+                    <th class="pb-2 pr-4">状态</th>
+                    <th class="pb-2 pr-4">创建人</th>
+                    <th class="pb-2 pr-4">创建时间</th>
+                    <th class="pb-2">操作</th>
+                </tr>
+            </thead>
+            <tbody id="orders-table">
+                <tr><td colspan="7" class="py-10 text-center text-gray-400 dark:text-gray-500">加载中…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div id="pagination" class="flex items-center justify-between mt-4">
+        <span id="page-info" class="text-xs text-gray-500 dark:text-gray-400"></span>
+        <div class="flex space-x-1" id="page-btns"></div>
+    </div>
+</div>
+
+<!-- Order Detail Modal -->
+<div id="order-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="font-semibold text-gray-800 dark:text-gray-100">工单详情</h3>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none">✕</button>
+        </div>
+        <div id="modal-content" class="p-5 space-y-4">
+            <div class="text-gray-400 text-center py-4">加载中…</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PAGE_SIZE = 20;
+let currentOffset = 0;
+
+async function loadOrders(offset) {
+    currentOffset = offset;
+    const state = document.getElementById('state-filter').value;
+    const project = document.getElementById('project-filter').value.trim();
+    let url = `/api/admin/orders?limit=${PAGE_SIZE}&offset=${offset}`;
+    if (state) url += `&state=${encodeURIComponent(state)}`;
+    if (project) url += `&project=${encodeURIComponent(project)}`;
+
+    try {
+        const resp = await fetch(url);
+        const orders = await resp.json();
+        const tbody = document.getElementById('orders-table');
+
+        if (!orders.length) {
+            tbody.innerHTML = '<tr><td colspan="7" class="py-10 text-center text-gray-400 dark:text-gray-500">暂无工单</td></tr>';
+            document.getElementById('page-info').textContent = '共 0 条';
+            document.getElementById('page-btns').innerHTML = '';
+            return;
+        }
+
+        tbody.innerHTML = orders.map(o => `
+            <tr class="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors cursor-pointer" onclick="showOrderDetail(${o.id})">
+                <td class="py-3 pr-4"><span class="font-mono text-xs text-blue-600 dark:text-blue-400">${o.order_no}</span></td>
+                <td class="py-3 pr-4 text-gray-700 dark:text-gray-300 font-medium">${o.issue}</td>
+                <td class="py-3 pr-4">
+                    <div class="text-gray-700 dark:text-gray-300">${o.project}</div>
+                    <div class="font-mono text-xs text-gray-400 dark:text-gray-500">${o.branch}</div>
+                </td>
+                <td class="py-3 pr-4"><span class="badge ${stateBadge(o.state)}">${stateLabel(o.state)}</span></td>
+                <td class="py-3 pr-4 text-gray-500 dark:text-gray-400 text-xs">${o.created_by || '—'}</td>
+                <td class="py-3 pr-4 text-xs text-gray-500 dark:text-gray-400">${fmtDate(o.created_at)}</td>
+                <td class="py-3">
+                    <button onclick="event.stopPropagation(); showOrderDetail(${o.id})"
+                        class="text-xs text-blue-600 dark:text-blue-400 hover:underline">详情</button>
+                </td>
+            </tr>
+        `).join('');
+
+        // Pagination info
+        const page = Math.floor(offset / PAGE_SIZE) + 1;
+        document.getElementById('page-info').textContent = `第 ${page} 页 · 每页 ${PAGE_SIZE} 条`;
+
+        // Prev / Next buttons
+        const prev = offset > 0;
+        const hasNext = orders.length === PAGE_SIZE;
+        document.getElementById('page-btns').innerHTML = `
+            <button onclick="loadOrders(${Math.max(0, offset - PAGE_SIZE)})"
+                class="px-3 py-1 text-xs rounded-lg border ${prev ? 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700' : 'border-gray-200 dark:border-gray-700 text-gray-300 dark:text-gray-600 cursor-not-allowed'}"
+                ${prev ? '' : 'disabled'}>← 上一页</button>
+            <button onclick="loadOrders(${offset + PAGE_SIZE})"
+                class="px-3 py-1 text-xs rounded-lg border ${hasNext ? 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700' : 'border-gray-200 dark:border-gray-700 text-gray-300 dark:text-gray-600 cursor-not-allowed'}"
+                ${hasNext ? '' : 'disabled'}>下一页 →</button>
+        `;
+    } catch(e) {
+        console.error('加载工单失败:', e);
+    }
+}
+
+async function showOrderDetail(orderId) {
+    document.getElementById('order-modal').classList.remove('hidden');
+    document.getElementById('modal-content').innerHTML = '<div class="text-gray-400 text-center py-8">加载中…</div>';
+
+    try {
+        const resp = await fetch(`/api/admin/orders/${orderId}`);
+        if (!resp.ok) throw new Error(resp.statusText);
+        const o = await resp.json();
+
+        document.getElementById('modal-content').innerHTML = `
+            <!-- Basic Info -->
+            <div class="grid grid-cols-2 gap-3 text-sm">
+                <div><span class="text-gray-500 dark:text-gray-400">工单号</span>
+                    <div class="font-mono text-xs mt-0.5 text-blue-600 dark:text-blue-400">${o.order_no}</div></div>
+                <div><span class="text-gray-500 dark:text-gray-400">状态</span>
+                    <div class="mt-0.5"><span class="badge ${stateBadge(o.state)}">${stateLabel(o.state)}</span></div></div>
+                <div><span class="text-gray-500 dark:text-gray-400">ISSUE</span>
+                    <div class="font-medium mt-0.5 text-gray-800 dark:text-gray-200">${o.issue}</div></div>
+                <div><span class="text-gray-500 dark:text-gray-400">项目</span>
+                    <div class="mt-0.5 text-gray-800 dark:text-gray-200">${o.project}</div></div>
+                <div><span class="text-gray-500 dark:text-gray-400">分支</span>
+                    <div class="font-mono text-xs mt-0.5 text-gray-700 dark:text-gray-300">${o.branch}</div></div>
+                <div><span class="text-gray-500 dark:text-gray-400">创建人</span>
+                    <div class="mt-0.5 text-gray-700 dark:text-gray-300">${o.created_by || '—'}</div></div>
+                <div class="col-span-2"><span class="text-gray-500 dark:text-gray-400">构建命令</span>
+                    <div class="font-mono text-xs mt-0.5 p-2 bg-gray-100 dark:bg-gray-700 rounded text-gray-700 dark:text-gray-300 break-all">${o.build_cmd || '—'}</div></div>
+            </div>
+
+            <!-- Approvals -->
+            <div>
+                <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">审批记录</h4>
+                ${o.approvals && o.approvals.length ? `
+                <div class="space-y-2">
+                    ${o.approvals.map(a => `
+                    <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-gray-50 dark:bg-gray-700">
+                        <div>
+                            <span class="font-medium text-gray-700 dark:text-gray-300">${a.approver}</span>
+                            <span class="ml-2 text-gray-400">${a.review_type === 'second' ? '二次审核' : '初次审批'}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="badge ${approvalBadge(a.status)}">${a.status}</span>
+                            <span class="text-gray-400">${fmtDate(a.responded_at || a.created_at)}</span>
+                        </div>
+                    </div>
+                    `).join('')}
+                </div>` : '<div class="text-gray-400 dark:text-gray-500 text-xs">无审批记录</div>'}
+            </div>
+
+            <!-- Build Results -->
+            <div>
+                <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">构建记录</h4>
+                ${o.build_results && o.build_results.length ? `
+                <div class="space-y-2">
+                    ${o.build_results.map(b => `
+                    <div class="flex items-center justify-between text-xs p-2 rounded-lg bg-gray-50 dark:bg-gray-700">
+                        <div>
+                            <span class="font-medium text-gray-700 dark:text-gray-300">#${b.build_number || b.id}</span>
+                            <span class="ml-2 text-gray-400">${b.duration_seconds ? b.duration_seconds + 's' : ''}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="badge ${stateBadge(b.status)}">${b.status}</span>
+                            ${b.log_url ? `<a href="${b.log_url}" target="_blank" class="text-blue-500 hover:underline">日志</a>` : ''}
+                        </div>
+                    </div>
+                    `).join('')}
+                </div>` : '<div class="text-gray-400 dark:text-gray-500 text-xs">无构建记录</div>'}
+            </div>
+
+            <!-- Timestamps -->
+            <div class="grid grid-cols-2 gap-2 text-xs text-gray-400 dark:text-gray-500 border-t border-gray-200 dark:border-gray-700 pt-3">
+                <div>创建：${fmtDate(o.created_at)}</div>
+                <div>更新：${fmtDate(o.updated_at)}</div>
+            </div>
+        `;
+    } catch(e) {
+        document.getElementById('modal-content').innerHTML = `<div class="text-red-500 text-center py-4">加载失败: ${e.message}</div>`;
+    }
+}
+
+function closeModal() {
+    document.getElementById('order-modal').classList.add('hidden');
+}
+
+// Close on backdrop click
+document.getElementById('order-modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('order-modal')) closeModal();
+});
+
+loadOrders(0);
+</script>
+{% endblock %}

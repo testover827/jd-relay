@@ -1,8 +1,8 @@
 # TODO — JD-Relay 待办事项
 
-> 最后更新：2026-06-19
+> 最后更新：2026-06-22
 > 架构：Python Forwarder + C++ Agent（混合架构）
-> 当前状态：Phase 1 ✅ Phase 2 ✅ Phase 2.5 ✅ Phase 3 ✅ Phase 4 🔄 | C++ 43/43 ✅ | Python 65/65 ✅
+> 当前状态：Phase 1 ✅ Phase 2 ✅ Phase 2.5 ✅ Phase 3 ✅ Phase 4 🔄 | C++ 43/43 ✅ | Python 65/65 ✅ | Web 面板 ✅
 
 ---
 
@@ -30,7 +30,7 @@
 - [x] CryptoEnvelope JSON 格式一致性
 - [x] 篡改检测（两方向）
 - [x] 全部 6 种 MessageType
-- [ ] Python Forwarder ↔ C++ Agent 端到端握手（Boost.Beast↔uvicorn 待同 OS 验证）
+- [x] Python Forwarder ↔ C++ Agent 端到端握手（Boost.Beast↔websockets 已验证）
 
 ---
 
@@ -88,7 +88,7 @@
 
 ### 4.6 文档 ✅
 - [x] README.md（更新）
-- [x] SECURITY.md（加密方案 + 密钥管理 + 审计清单）
+- [x] security.md（加密方案 + 密钥管理 + 审计清单）
 - [ ] OPERATIONS.md（部署运维手册）
 
 ---
@@ -96,7 +96,7 @@
 ## 技术债务
 
 - [ ] Agent 离线缓冲 SQLite 模块
-- [x] Agent 主程序（agent_main.cpp，含配置解析）
+- [x] Agent 主程序（agent_main.cpp，含配置解析 + BUILD_RESULT 回传 + special.md 检测）
 - [ ] Agent 日志系统（spdlog 替换 std::cerr）
 - [ ] 消息 ACK 确认机制
 - [ ] Forwarder 心跳机制

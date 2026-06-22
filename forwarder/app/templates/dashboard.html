@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+{% block title %}仪表盘 — JD-Relay{% endblock %}
+
+{% block content %}
+<!-- ── 统计卡片 ── -->
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">工单总数</div>
+        <div class="text-2xl font-bold text-gray-800 dark:text-gray-100" id="stat-total">—</div>
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">待审批</div>
+        <div class="text-2xl font-bold text-yellow-600 dark:text-yellow-400" id="stat-pending">—</div>
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">构建中</div>
+        <div class="text-2xl font-bold text-purple-600 dark:text-purple-400" id="stat-building">—</div>
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">成功</div>
+        <div class="text-2xl font-bold text-green-600 dark:text-green-400" id="stat-success">—</div>
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">失败</div>
+        <div class="text-2xl font-bold text-red-600 dark:text-red-400" id="stat-failed">—</div>
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">在线 Agent</div>
+        <div class="text-2xl font-bold text-blue-600 dark:text-blue-400" id="stat-agents">—</div>
+    </div>
+</div>
+
+<!-- ── 最近工单 ── -->
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-gray-800 dark:text-gray-100">📋 最近工单</h3>
+        <a href="/admin/orders" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">查看全部 →</a>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-gray-200 dark:border-gray-700 text-left text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide">
+                    <th class="pb-2 pr-4">工单号</th>
+                    <th class="pb-2 pr-4">ISSUE</th>
+                    <th class="pb-2 pr-4">项目</th>
+                    <th class="pb-2 pr-4">分支</th>
+                    <th class="pb-2 pr-4">状态</th>
+                    <th class="pb-2">创建时间</th>
+                </tr>
+            </thead>
+            <tbody id="recent-orders">
+                <tr><td colspan="6" class="py-8 text-center text-gray-400 dark:text-gray-500">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ── Agent 状态 ── -->
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-gray-800 dark:text-gray-100">⚡ Agent 状态</h3>
+        <a href="/admin/agents" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">查看全部 →</a>
+    </div>
+    <div id="agent-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div class="text-gray-400 dark:text-gray-500 text-sm">加载中...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDashboard() {
+    try {
+        const [statsResp, ordersResp, agentsResp] = await Promise.all([
+            fetch('/api/admin/stats'),
+            fetch('/api/admin/orders?limit=10&offset=0'),
+            fetch('/api/admin/agents'),
+        ]);
+
+        // Stats
+        const stats = await statsResp.json();
+        document.getElementById('stat-total').textContent = stats.total_orders;
+        document.getElementById('stat-pending').textContent = stats.pending_approval;
+        document.getElementById('stat-building').textContent = stats.building;
+        document.getElementById('stat-success').textContent = stats.success;
+        document.getElementById('stat-failed').textContent = stats.failed;
+        document.getElementById('stat-agents').textContent = stats.online_agents;
+
+        // Recent orders
+        const orders = await ordersResp.json();
+        const tbody = document.getElementById('recent-orders');
+        if (!orders.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-gray-400 dark:text-gray-500">暂无工单</td></tr>';
+        } else {
+            tbody.innerHTML = orders.map(o => `
+                <tr class="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
+                    <td class="py-2.5 pr-4">
+                        <a href="/admin/orders/${o.id}" class="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline">${o.order_no}</a>
+                    </td>
+                    <td class="py-2.5 pr-4 text-gray-700 dark:text-gray-300">${o.issue}</td>
+                    <td class="py-2.5 pr-4 text-gray-700 dark:text-gray-300">${o.project}</td>
+                    <td class="py-2.5 pr-4 font-mono text-xs text-gray-500 dark:text-gray-400">${o.branch}</td>
+                    <td class="py-2.5 pr-4"><span class="badge ${stateBadge(o.state)}">${stateLabel(o.state)}</span></td>
+                    <td class="py-2.5 text-xs text-gray-500 dark:text-gray-400">${fmtDate(o.created_at)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Agent cards
+        const agents = await agentsResp.json();
+        const agentDiv = document.getElementById('agent-cards');
+        if (!agents.length) {
+            agentDiv.innerHTML = '<div class="text-gray-400 dark:text-gray-500 text-sm">暂无 Agent</div>';
+        } else {
+            agentDiv.innerHTML = agents.map(a => `
+                <div class="flex items-center space-x-3 p-3 rounded-lg border ${
+                    a.is_online
+                      ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20'
+                      : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750'
+                }">
+                    <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 ${a.is_online ? 'bg-green-500 shadow-[0_0_6px_#22c55e]' : 'bg-gray-400'}"></div>
+                    <div class="min-w-0">
+                        <div class="font-mono text-xs font-medium text-gray-800 dark:text-gray-200 truncate">${a.agent_id}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">${(a.projects || []).join(', ') || '无项目'}</div>
+                    </div>
+                    <span class="ml-auto text-xs ${a.is_online ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}">${a.is_online ? '在线' : '离线'}</span>
+                </div>
+            `).join('');
+        }
+    } catch(e) {
+        console.error('加载仪表盘失败:', e);
+    }
+}
+
+loadDashboard();
+setInterval(loadDashboard, 30000);
+</script>
+{% endblock %}

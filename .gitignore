@@ -28,3 +28,7 @@ legacy/
 build_wsl/
 __pycache__/
 .venv/
+
+# vcpkg build dependency
+agent/vcpkg/
+

@@ -1,6 +1,6 @@
 # JD-Relay 后续实现提示词（交给 AI 执行）
 
-> 本文档是自包含的完整实现指引。将其完整粘贴给 AI 即可开始 Phase 2.5 + Phase 3 开发。
+> 本文档是自包含的完整实现指引。Phase 2.5 + Phase 3 已完成，本文档保留供参考。
 
 ---
 
@@ -66,11 +66,11 @@ jd-relay/
 │   ├── unit/                   #   Phase 1 单元测试 (39)
 │   └── integration/            #   Phase 2 集成测试 (4)
 ├── docs/
-│   ├── ARCHITECTURE.md         #   架构设计文档
-│   ├── CRYPTO_SPEC.md          #   加密协议规范（**必读**）
-│   ├── PHASE1_SUMMARY.md       #   Phase 1 交付概览
-│   ├── PHASE2_SUMMARY.md       #   Phase 2 交付概览
-│   └── UIUX.md                 #   UI/UX 设计参考
+│   ├── architecture.md       #   架构设计文档
+│   ├── crypto-spec.md         #   加密协议规范（**必读**）
+│   ├── phase1-summary.md     #   Phase 1 交付概览
+│   ├── phase2-summary.md     #   Phase 2 交付概览
+│   └── ui-ux.md              #   UI/UX 设计参考
 ├── legacy/
 │   ├── python/                 #   旧 Python/FastAPI 代码（可参考复用）
 │   │   └── server/app/         #     含 dingtalk_service.py, models.py 等
@@ -142,7 +142,7 @@ forwarder/
 
 **这是最关键的部分。** 加密模块必须与 C++ Agent 端完全互通。
 
-详细规范见 `docs/CRYPTO_SPEC.md`，以下是要点：
+详细规范见 `docs/crypto-spec.md`，以下是要点：
 
 #### ECDH 密钥协商
 ```python
@@ -404,10 +404,10 @@ SQLAlchemy 模型：
 
 实现前请仔细阅读以下文档：
 
-1. `docs/CRYPTO_SPEC.md` — 加密协议精确规范（**最重要**）
-2. `docs/ARCHITECTURE.md` — 架构设计文档
-3. `docs/PHASE1_SUMMARY.md` — C++ 加密模块交付概览
-4. `docs/PHASE2_SUMMARY.md` — C++ 传输层交付概览
+1. `docs/crypto-spec.md` — 加密协议精确规范（**最重要**）
+2. `docs/architecture.md` — 架构设计文档
+3. `docs/phase1-summary.md` — C++ 加密模块交付概览
+4. `docs/phase2-summary.md` — C++ 传输层交付概览
 5. `TODO.md` — 完整待办事项
 
 ---
@@ -417,7 +417,7 @@ SQLAlchemy 模型：
 ```
 你是一个资深全栈工程师，精通 Python 和 C++。
 
-请阅读项目文档（docs/CRYPTO_SPEC.md, docs/ARCHITECTURE.md），然后：
+请阅读项目文档（docs/crypto-spec.md, docs/architecture.md），然后：
 
 1. 在 forwarder/ 目录下创建 Python Forwarder 项目骨架
 2. 实现 forwarder/app/crypto/ 加密模块，确保与 C++ Agent 完全兼容
@@ -427,5 +427,5 @@ SQLAlchemy 模型：
 
 完成后进入 Phase 3：钉钉回调接口 + 状态机 + MySQL 持久化 + Agent 端 Jenkins API。
 
-关键约束：加密模块必须严格遵循 docs/CRYPTO_SPEC.md 规范，与 C++ Agent 完全互通。
+关键约束：加密模块必须严格遵循 docs/crypto-spec.md 规范，与 C++ Agent 完全互通。
 ```

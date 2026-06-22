@@ -1,0 +1,31 @@
+# agent.conf — JD-Relay Agent configuration (INI-style)
+# Place next to the agent binary, or pass path as argv[1].
+
+[forwarder]
+host = 127.0.0.1
+port = 8000
+
+[crypto]
+ecdsa_private_key_file = /path/to/agent_ecdsa_priv.pem
+ecdsa_public_key_file  = /path/to/agent_ecdsa_pub.pem
+
+[agent]
+agent_id            = agent-001
+projects            = myproject,another-project
+max_concurrent_builds = 4
+repo_path            = /path/to/your/repo   # local git repo for special.md detection
+special_md_interval_sec = 30
+special_md_base_ref    = origin/main
+
+[jenkins]
+url         = https://jenkins.example.com
+user        = jenkins_user
+token       = jenkins_api_token
+poll_interval = 5
+build_timeout = 3600
+
+# Project name → Jenkins job name mapping
+# (if project name differs from Jenkins job name)
+[projects]
+myproject = myproject-build
+another-project = another-project-build

@@ -1,14 +1,21 @@
 [project]
 name = "jd-relay-forwarder"
-version = "2.0.0"
-description = "JD-Relay Forwarder — cross-network build approval relay (Python)"
+version = "3.0.0"
+description = "JD-Relay Forwarder — cross-network build approval relay (Python + FastAPI)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.104",
     "uvicorn[standard]>=0.24",
     "cryptography>=41",
     "sqlalchemy>=2.0",
-    "httpx>=0.25",
+    "aiomysql>=0.2",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    # DingTalk 官方 SDK
+    "alibabacloud-dingtalk>=2.0",
+    "alibabacloud-tea-openapi>=0.3",
+    "alibabacloud-tea-util>=0.3",
+    "tenacity>=8",
 ]
 
 [project.optional-dependencies]
@@ -16,14 +23,27 @@ test = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "websockets>=13",
+    "httpx>=0.25",
 ]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "websockets>=13",
+    "httpx>=0.25",
     "ruff>=0.6",
 ]
 
+[project.scripts]
+jd-relay-forwarder = "forwarder.app.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["forwarder*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests/python"]
+testpaths = ["forwarder/tests"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"

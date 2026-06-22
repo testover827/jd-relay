@@ -1,8 +1,8 @@
 """JD-Relay Forwarder — main entry point.
 
 Usage:
-    python -m forwarder.main [--config forwarder.conf]
-    RELAY_PORT=8000 python -m forwarder.main
+    python -m forwarder.app.main [--config forwarder.conf]
+    RELAY_PORT=8000 python -m forwarder.app.main
 """
 
 import argparse
@@ -11,11 +11,8 @@ import logging
 import sys
 import os
 
-# Ensure src/ is on the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
-from forwarder.config import load_config
-from forwarder.ws.server import ForwarderServer
+from forwarder.app.config import load_config
+from forwarder.app.ws.server import ForwarderServer
 
 logger = logging.getLogger("forwarder")
 
@@ -40,13 +37,14 @@ async def main():
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
 
-    logger.info(f"JD-Relay Forwarder v2.0.0 starting on {host}:{port}")
+    logger.info(f"JD-Relay Forwarder v3.0.0 starting on {host}:{port}")
     logger.info(f"ECDSA keys: {config.ecdsa_private_key_file} / {config.ecdsa_public_key_file}")
 
     # Create Forwarder
     fwd = ForwarderServer(
         ecdsa_priv_file=config.ecdsa_private_key_file,
         ecdsa_pub_file=config.ecdsa_public_key_file,
+        config=config,
     )
 
     # Start uvicorn

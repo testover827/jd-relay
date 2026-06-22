@@ -124,7 +124,7 @@ JD-Relay 是一个跨网审批构建转发系统，桥接外网钉钉与内网 J
 
 ## 4. 加密模型
 
-详见 [CRYPTO_SPEC.md](./CRYPTO_SPEC.md)。摘要：
+详见 [crypto-spec.md](./crypto-spec.md)。摘要：
 
 | 要素 | 规范 |
 |------|------|
@@ -236,28 +236,58 @@ jd-relay/
 │   ├── ws_client/              #   WebSocket 客户端 (自动重连)
 │   ├── tools/                  #   CLI 工具 (keygen/encryptor/decryptor)
 │   └── CMakeLists.txt
-├── forwarder/                  # Python Forwarder（待实现 Phase 3）
+├── forwarder/                  # Python Forwarder（Phase 3 ✅ 已完成）
 │   ├── app/
 │   │   ├── main.py             #   FastAPI 入口
-│   │   ├── api/                #   路由 (dingtalk/admin/jenkins)
-│   │   ├── services/           #   业务服务 (approval/build/agent_router)
-│   │   ├── crypto/             #   加密模块 (与 C++ 互通)
-│   │   ├── ws/                 #   WebSocket 服务端 (agent-ws)
-│   │   ├── models/             #   SQLAlchemy 模型
-│   │   ├── middleware/         #   中间件 (auth/logging)
-│   │   └── templates/          #   Jinja2 模板 (Web 面板)
-│   ├── config/
-│   ├── tests/
-│   └── pyproject.toml
+│   │   ├── config.py           #   配置加载 (pydantic-settings)
+│   │   ├── state.py            #   工单状态机
+│   │   ├── models.py           #   SQLAlchemy 数据模型
+│   │   ├── database.py        #   异步数据库引擎 + FastAPI dependency
+│   │   ├── api/                #   REST API 路由
+│   │   │   ├── dingtalk.py    #   钉钉回调 / 审批触发
+│   │   │   └── admin.py       #   管理面板 API（真实数据库查询）
+│   │   ├── services/           #   业务逻辑
+│   │   │   ├── dingtalk.py   #   钉钉 SDK 封装（alibabacloud-dingtalk）
+│   │   │   ├── relay.py       #    relay 服务（审批→构建→结果回传）
+│   │   │   └── jenkins.py    #   Jenkins API 客户端（C++ Agent 端）
+│   │   ├── crypto/             #   加密模块（与 C++ 互通）
+│   │   ├── ws/                 #   WebSocket 服务端
+│   │   │   ├── server.py      #   FastAPI WebSocket 路由 + Agent 管理
+│   │   │   ├── agent_session.py #   单 Agent 会话
+│   │   │   └── agent_manager.py #   Agent 注册表（by_agent_id + by_project）
+│   │   ├── templates/          #   Jinja2 模板（Web 管理面板）
+│   │   │   ├── base.html      #   基础模板（亮/暗主题切换）
+│   │   │   ├── dashboard.html #   仪表盘（统计卡片 + 活动流）
+│   │   │   ├── orders.html    #   工单列表 + 过滤/搜索
+│   │   │   └── agents.html   #   Agent 状态监控
+│   │   └── static/            #   静态资源（CSS/JS）
+│   ├── config/                 #   配置样例（forwarder.conf.example）
+│   ├── tests/                 #   Python 测试（65 项全绿）
+│   ├── pyproject.toml        #   Python 项目配置（v3.0.0）
+│   ├── alembic.ini            #   Alembic 迁移配置（已更新路径）
+│   └── docker-compose.yml    #   开发环境（MySQL + Forwarder）
+├── agent/                      # C++ Agent（Phase 1+2 ✅，Phase 3 main ✅）
+│   ├── crypto/                 #   加密模块 (ECDH/AES-GCM/ECDSA)
+│   ├── protocol/               #   握手协议 (HandshakeInit/Ack)
+│   ├── ws_client/              #   WebSocket 客户端 (自动重连)
+│   ├── jenkins/                #   Jenkins REST API 客户端
+│   ├── tools/                  #   CLI 工具 (keygen/encryptor/decryptor/agent_main)
+│   └── CMakeLists.txt
 ├── tests/                      # C++ 测试
 │   ├── unit/                   #   Phase 1 单元测试 (39)
-│   └── integration/            #   Phase 2 集成测试 (4)
+│   └── integration/            #   Phase 2 集成测试 (4) + 跨语言 (1)
 ├── config/                     # 配置样例
+│   ├── forwarder.conf.example
+│   ├── agent.conf.example
+│   └── special.md
 ├── docs/                       # 文档
-│   ├── ARCHITECTURE.md         #   本文档
-│   ├── CRYPTO_SPEC.md          #   加密协议规范
-│   ├── PHASE1_SUMMARY.md       #   Phase 1 交付概览
-│   └── UIUX.md                 #   UI/UX 设计
+│   ├── architecture.md        #   本文档
+│   ├── crypto-spec.md         #   加密协议规范
+│   ├── phase1-summary.md     #   Phase 1 交付概览
+│   ├── phase2-summary.md     #   Phase 2 交付概览
+│   ├── phase3-summary.md     #   Phase 3 交付概览（新建）
+│   ├── security.md            #   安全设计
+│   └── ui-ux.md              #   UI/UX 设计
 ├── deploy/                     # 部署配置
 ├── jenkins/                    # Jenkins 脚本
 ├── legacy/                     # 归档代码
@@ -280,9 +310,9 @@ jd-relay/
 |------|---------|------|
 | Web 框架 | FastAPI + uvicorn | 异步 HTTPS 服务 |
 | ORM | SQLAlchemy 2.0 + MySQL | 工单/审批/构建记录持久化 |
-| WebSocket | `websockets` 或 `aiohttp` | Agent 连接管理 |
+| WebSocket | `websockets`（原生，FastAPI 集成） | Agent 连接管理（/agent-ws）|
 | 加密 | `cryptography` 库 | ECDH/AES-GCM/ECDSA，与 C++ 互通 |
-| 钉钉 | 钉钉 OpenAPI SDK | 审批流/消息通知 |
+| 钉钉 | alibabacloud-dingtalk（钉钉官方 Python SDK） | 审批流/消息通知/工作通知 |
 | 模板 | Jinja2 | Web 管理面板 |
 | 配置 | pydantic-settings | 环境变量 + 配置文件 |
 
